@@ -1,0 +1,48 @@
+dll_opts	= /bd /d1
+ext		= for
+cmp		= wfc386
+opts		= /q /xline /expl /os
+linker = wlink
+all : .symbolic RxRsync.dll
+    @%null
+
+funcload.obj : funcload.for
+	$(cmp) $(opts) $(dll_opts) $^&
+
+rxadler1.obj : rxadler1.for
+	$(cmp) $(opts) $(dll_opts) $^&
+
+rxadler2.obj : rxadler2.for
+	$(cmp) $(opts) $(dll_opts) $^&
+
+rxadler3.obj : rxadler3.for
+	$(cmp) $(opts) $(dll_opts) $^&
+
+srsync.obj : srsync.for
+	$(cmp) $(opts) $(dll_opts) $^&
+
+rxmd4.obj : rxmd4.for
+	$(cmp) $(opts) $(dll_opts) $^&
+
+rxsutils.obj : rxsutils.for
+	$(cmp) $(opts) $(dll_opts) $^&
+
+RXRSYNC.DLL : funcload.obj srsync.obj rxmd4.obj rxadler3.obj rxadler2.obj rxadler1.obj rxsutils.obj 
+	@set lnk=$^&.lnk
+	@%create $(%lnk)
+	@%append $(%lnk) debug all
+	@%append $(%lnk) system os2v2 dll initinstance terminstance
+	@%append $(%lnk) option manyautodata, map, case
+	@%append $(%lnk) file funcload, srsync, rxmd4, rxadler3, rxadler2, rxadler1, rxsutils
+	@%append $(%lnk) library rexx
+	@%append $(%lnk) export RxRsyncLoad resident
+	@%append $(%lnk) export RxRsyncDrop resident
+	@%append $(%lnk) export RX_RSYNC32 resident
+	@%append $(%lnk) export RX_ADLER32 resident
+	@%append $(%lnk) export RX_RSYNC32_MD4 resident
+	@%append $(%lnk) export RX_RSYNC_GDIFF resident
+	@%append $(%lnk) export RX_MD4 resident
+	$(linker) name $^& @$(%lnk)
+
+clean : .symbolic
+	@-del *.lnk *.dll *.map *.obj 1>nul 2>nul

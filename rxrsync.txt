@@ -1,0 +1,339 @@
+18 November 1999.
+
+  RxRsync ver 1.01: Rexx procedures for the rsync differencing protocol 
+
+Absract:
+   RxRsync contains several OS/2 classic REXX procedures that implement
+   the rsync "differencing" protocol. This document describes their use.
+
+                        ---------------------
+
+I) Introduction
+
+The Rsync protocol is a "client/server" differencing protocol that 
+does not require that both parties have the same copy of a prior 
+version.  Instead, the client sends a synopsis of a prior 
+version, information which the server can use to create a difference 
+file (it uses this synopsis in lieu of the actual contents of the 
+prior version).
+
+Thus, rsync trades off some extra exchange of information (the synopsis
+the client sends to the server), in return for removing the 
+need for both sides of the transaction having identical copies of 
+the prior version. Of course, the efficiency of rsync is a function 
+of how close the prior version (on the client side) is to the current
+version (on the server side).  Nevertheless, in even the worst case
+(comparison of two different random files), the penalty is small; wheras
+in the best case (slight changes), 10 to 1 reductions in total (both ways)
+message size are not uncommon.
+
+The rsync protocol has several steps. Assume a client wants a current
+version of a file; and that the client has a prior version of the
+file available. Then:
+
+1) A "client" creates a "synopsis" of it's prior version.  
+2) The client requests the "server" for the current version, and
+   sends a copy of this synopsis along with this request
+3) The server creates a "difference" file by comparing the synopsis
+   to it's copy of the current version.
+4) The server send this difference file back to the client
+5) The client combines the difference file with it's copy of the prior
+   version to create an exact duplicate of the new version.
+
+Note that the server is NOT expected to have a copy of the prior version!
+
+The procedures in RxRsync can be used to implement this chain of events.
+About all you need to do is worry about the communication steps (steps
+2 and 4).
+
+                        ---------------------
+
+II) Installing RxRsync
+
+First, unzip RXRSYNC.ZIP to an empty temporary directory.
+
+  1) Copy RXRsync.DLL to your LIBPATH (say, copy it to x:\OS2\DLL).
+     You will also need a copy of REXXUTIL, but that's part of
+     most OS/2 installations.
+     
+  2) Write a REXX program, and  either:
+       a)include a copy of RxRSYNC.REX (say, put it at the end of your 
+         rexx program file)
+       b) Load RxRSYNC.RXL into "macrospace", and load a few dlls.
+       See the notes in section IV below for the details.
+
+  3) Within your REXX programs, call the procedures.
+
+
+Alternatively, you can use the RXSYNC.CMD program -- it's an "all rexx"
+implementation of rsync.  It's very slow, but it should work on
+any REXX system.
+
+                        ---------------------
+
+III) Description of procedures
+     
+There are three  REXX procedures:
+
+     Rsync_Synopsis: creates a synopsis of an old version.
+     Rsync_Gdiff: uses this synopsis, and the new version, to create
+                   a gdiff-formatted difference file
+     rsync_ungdiff: uses a gdiff-formatted difference file, and the old 
+                    version, to build a copy of the new version
+
+Rsync_Synopsis: create a synopsis of an old version
+
+   Syntax:
+
+     status=Rsync_Synopsis(oldver_file,synopsis_file,comment,quiet,blocksize)
+
+   where:
+       oldver_file: a fully qualified file name (the old version)
+       synopsis_file: a fully qualified file name (the synopsis file)
+       comment: an optional comment 
+       quiet: set to 1 to suppress runtime status messages
+              This is an optional parameter (the default is 0).
+       blocksize: blocksize to be used when creating synopsis file.
+                  Sizes between 500 and 1000 seem to work best.
+                  This is an optional parameter (the default is 500)
+
+   and
+       status: A status message of the form:
+                 stat multi-word message
+               where
+                  stat= OK for success
+                        ERROR for failure
+
+   Notes:
+     * Examples of status returned values:
+           ERROR no such old version
+           OK 5151 bytes written to  C1FILE.RSY
+     *  The synopsis_file will be created in "overwrite mode" (prior
+        versions of this file will first be deleted).
+     *  The comment can be up to 80 characters long. If not specified,
+        a timestamp is used
+
+Rsync_Gdiff: use a synopsis to create a GDIFF-formatted difference file
+   
+   Syntax:
+
+      status=Rsync_Gdiff(synopsis_file,newver_file,diff_file,quiet)
+
+    where:
+        synopsis_file: a synopsis file 
+        newver_file: a fully qualified file name (the new version)
+        diff_file: a fully qualified file name  (the difference file)
+        quiet: set to 1 to suppress runtime status messages
+            This is an optional parameter (the default is 0).
+     and
+        status: A status message
+
+        The status message is either:
+          OK  md4_value
+        or
+          ERROR Error message
+
+        The md4_value is a 32 hex character MD4 hash of the newver_file.
+        See Rsync_unGdiff for an example of how it can be used.
+
+   Notes:
+      * as with the synopsis_file, the diff_file is created in overwrite mode
+
+rsync_unGdiff:  create a duplicate of a new file from a difference file
+
+   Syntax:
+
+         status=rsync_unGdiff(oldver_file,diff_file,newver_file,amd4,quiet)
+
+   where:
+        oldver_file: a fully qualified file name (the old version)
+        diff_file: a fully qualified file name  (the difference file)
+        newver_file: a fully qualified file name (the "duplicate" new ver)
+        amd4: (optional) md4 of the "server's new" version of the file.
+        quiet:(optional) set to 1 to suppress runtime status messages
+              The default is 0).
+
+   and
+        status: A status message
+
+   Notes:
+      * as with the synopsis_file, the newver_file is created in 
+        overwrite mode
+      * the status has the same structure as status in Rsync_Synopsis
+
+      * if you specify amd4, and the md4 hash of the newver_file (that
+        is created) does NOT match amd4, then an error message is
+        generated (and newver_file is NOT created).
+
+
+     * rsync_unGdiff can be used for ANY "gdiff-formatted" difference
+       file -- not just "gdiff-formatted" difference files produced by
+       rsync_Gdiff.
+
+                        ---------------------
+
+IV) The rxRsync.Dll dynamic link library.
+
+Since REXX is very slow at repetitive math, the above rexx procedures 
+use several procedures in rxRsync.dll. 
+
+RxRsyncLoad: Loads the rxRsync procedures.
+
+  For example:
+
+  if rxfuncquery('rx_md4')=1  then do
+      call RXFuncAdd 'RXRsyncLoad', 'RXRSYNC', 'RxRsyncLoad'
+      call RxRsyncLoad
+  end
+  if rxfuncquery('rx_md4')=1  then do
+     return "ERROR could not load  RxRsync.DLL"
+  end
+
+RxRsyncDrop: unload the rxRsync procedures
+   
+   For example:
+        call RxRsyncDrop
+
+RX_RSYNC32: Compute a 32 bit rolling checksum of a string
+  
+   For example: 
+       csum32=rx_rsync32('some kind of string of any length')
+       csum32 will be an 8 character hex number
+
+RX_ADLER32: Compute an adler-32 checksum
+   This is the standard adler-32 checksum (which differs from the
+   "modified adler 32 checksum" used by rsync).
+
+   Syntax:
+        a32=rx_adler32(astring)
+   where
+        a32 is an 8 hex character string (possibly padded with 0s on the left)
+
+   Example:
+     a32x=rx_adler32('This is a very long string. Really!')
+
+   Alternatively, you can build the checksum in pieces; by sequentially
+   calling rx_adler32 with substrings. This is useful if you want the checksum
+   of a large file.
+
+   Syntax:   
+        a32=rx_adler32(astring,olda32)
+   where
+       olda32 is an 8 hex character string returned by an earlier call to 
+       rx_adler32
+   
+   Example:
+     a32a=rx_adler32('This is a very long string.')
+     a32b=rx_adler32(' Really!',a32a)
+
+   Norw: a32b will equal a32x
+
+RX_MD4: Compute an MD4 hash of a string or a file
+   syntax:
+        amd4=rx_md4(stuff,[fileflag])
+    If fileflag not specified, or not equal to 1, then stuff is a string.
+    Otherwise, stuff should be a fully qualified filename.
+    Examples: 
+       amd4=rx_md4('some kind of string of any length')
+       fmd4=rx_md4('d:\test\foo.bar',1)
+    amd4 (or fmd4) will be a 32 hex character md4.   
+ 
+RX_RSYNC32_MD4: Compute a 32 bit rolling checksum, and an md4 hash
+   For example: 
+       csum32_md4=rx_rsync32_md4('some kind of string of any length')
+       csum32 will be an 20 characters. The first 4 are the rolling
+       checksum, characters 5 to 20 are the MD4. 
+       Thus:  csum32=c2x(substr(csum_32_md4),1,4)
+              amd4=c2x(substr(csum_32_md4),5,16)
+        
+RX_Rsync_Gdiff: Compute a gdiff-formatted "difference", given a
+                "current instance and a "synopsis".
+
+    status=rx_Rsync_Gdiff(newverfile,synopsis,outfile,use4)
+    where:
+        newverfile: a filename, pointing to the "current instance"
+        synopsis: the string containing the  "synopsis" of the "old 
+                  instance" (as may be produced by Rsync_Synopsis)
+        outfile: a file name, the "difference" file will be written
+                 to this file name (in overwrite mode)
+        use4: Optional. If set to 1, then only the first 4 characters of
+              the md4 checksum are used to verify. This is useful
+              when using the http version of rsync (smaller request
+              headers, with some small risk of an incorrect "undifferencing",
+              which may necessitate a re-request).
+     status is a status message. It can be:
+         OK md4_value
+           or
+        ERROR error message
+        The md4_value is a 32 hex character md4 hash of newverfile
+
+                        ---------------------
+
+V) Notes and disclaimer
+
+  * RSYNCtst.CMD demonstrates the use of these procedures as text inclusions.
+
+  * RSyncts2.CMD  demonstrates their use as a macrospace library.
+
+  * !!! If you use the "macrospace" version, you MUST be sure to 
+    load several dlls, and to load the macrospace library.  
+
+    RsyncTs2 contains a simple procedure (LOAD_LIBS) that will do this.
+
+  * The Rsync protocol was invented by Andrew Tridgell. For more information,
+    see http://samba.org.au/rsync/  
+
+  * A description of the GDIFF format can be found at:
+        http://www.w3.org/TR/NOTE-gdiff-19970901.html
+
+  * Users of the SRE-http web server (http://www.srehttp.org) can use
+    the sreRsync "pre-reply procedure", and the DoGET.CMD http requester,
+    as an http implementation of rsync.
+
+  * Structure of a synopsis file
+     Comment  -- 80 characters (i.e.; a requested file name)
+     1 space
+     Blocksize  -- 6 digit integer (i.e; 500)
+     1 space
+     #Blocks    -- 8 digit character (N)
+     1 space
+     md4        -- 32 digit md4
+     3 spaces
+     chksum1||md41||..||chksumN||md4N -- chksum and md4 values 
+                                         (machine integer format, 
+                                         high order bytes first)
+
+     Note: this is subject to change (it may be standardized to a
+           be compatible with unix implementations of rsync)
+
+  * Contents of rxRsync.zip
+
+        read.me       -- a small read.me file
+        RxRSYNC.RXL   -- REXX "macrospace" version of the three REXX procedures
+        rxrsync.rex   -- REXX code version of the three REXX procedures
+        rxsync.cmd    -- An all REXX implementation of Rsync (for demo purposes)
+        rsyncts2.cmd  -- Demo of rsync, using RxRSYNC.DLL
+        rsynctst.cmd  -- Demo of rsync, using (local copy of) rxrsync.rex
+        rxrsync.doc   -- this documentation file
+        RxRsync.dll   -- a Rexx callable dll containing several procedures
+        dllsrc.zip    -- Source code (watcom fortran, and rexx) used to create
+                         RxRsync.dll and RxRsync.rxl
+
+                        ---------------------
+
+Disclaimer:
+
+   This is freeware that is to be used at your own risk -- the 
+   author and any potentially affiliated institutions disclaim all 
+   responsibilties for any consequence arising from the use, misuse, or abuse 
+   of this software (or pieces of this software).
+
+   You may use this (or subsets of this) program as you see fit,    
+   including for commercial purposes; so long as  proper attribution
+   is made, and so long as such use does not in any way preclude 
+   others from making use of this code.
+
+Contact:
+   Daniel Hellerstein (danielh@crosslink.net or danielh@econ.ag.gov)
+   
+
